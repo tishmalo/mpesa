@@ -1,61 +1,223 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Laravel M-Pesa Package
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel package for integrating M-Pesa Lipa Na M-Pesa STK Push payments.
 
-## About Laravel
+## Installation
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+1. **Install the package via Composer:**
+```bash
+composer require tish/laravel-mpesa
+```
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+2. **Publish the config file and migrations:**
+```bash
+php artisan vendor:publish --provider="Tish\LaravelMpesa\MpesaServiceProvider"
+php artisan migrate
+```
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+3. **Add your M-Pesa credentials to your `.env` file:**
+```env
+MPESA_CONSUMER_KEY=your_consumer_key
+MPESA_CONSUMER_SECRET=your_consumer_secret
+MPESA_PASSKEY=your_passkey
+MPESA_BUSINESS_SHORT_CODE=your_shortcode
+MPESA_CALLBACK_URL=https://yourdomain.com/mpesa/callback
+MPESA_SANDBOX=true
+```
 
-## Learning Laravel
+4. **Create listeners to handle payment events:**
+```bash
+php artisan make:listener HandleSuccessfulPayment
+php artisan make:listener HandleFailedPayment
+```
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+5. **Register the event listeners in your `app/Providers/EventServiceProvider.php`:**
+```php
+<?php
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+namespace App\Providers;
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
+use Tish\LaravelMpesa\Events\PaymentCompleted;
+use Tish\LaravelMpesa\Events\PaymentFailed;
 
-## Laravel Sponsors
+class EventServiceProvider extends ServiceProvider
+{
+    protected $listen = [
+        PaymentCompleted::class => [
+            \App\Listeners\HandleSuccessfulPayment::class,
+        ],
+        PaymentFailed::class => [
+            \App\Listeners\HandleFailedPayment::class,
+        ],
+    ];
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+    public function boot()
+    {
+        //
+    }
+}
+```
 
-### Premium Partners
+6. **Implement your listeners:**
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+**`app/Listeners/HandleSuccessfulPayment.php`:**
+```php
+<?php
 
-## Contributing
+namespace App\Listeners;
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+use Tish\LaravelMpesa\Events\PaymentCompleted;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
 
-## Code of Conduct
+class HandleSuccessfulPayment implements ShouldQueue
+{
+    use InteractsWithQueue;
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+    public function handle(PaymentCompleted $event)
+    {
+        $transaction = $event->transaction;
+        
+        Log::info('Payment completed', [
+            'account_reference' => $transaction->account_reference,
+            'receipt_number' => $transaction->mpesa_receipt_number,
+            'amount' => $transaction->amount,
+            'phone' => $transaction->phone_number,
+        ]);
 
-## Security Vulnerabilities
+        // Update your database here
+        // Example: Find order by account_reference and mark as paid
+        /*
+        $order = Order::where('order_number', $transaction->account_reference)->first();
+        if ($order) {
+            $order->update([
+                'status' => 'paid',
+                'mpesa_receipt' => $transaction->mpesa_receipt_number,
+                'payment_date' => $transaction->transaction_date,
+            ]);
+        }
+        */
+    }
+}
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+**`app/Listeners/HandleFailedPayment.php`:**
+```php
+<?php
 
-## License
+namespace App\Listeners;
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+use Tish\LaravelMpesa\Events\PaymentFailed;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
+
+class HandleFailedPayment implements ShouldQueue
+{
+    use InteractsWithQueue;
+
+    public function handle(PaymentFailed $event)
+    {
+        $transaction = $event->transaction;
+        
+        Log::warning('Payment failed', [
+            'account_reference' => $transaction->account_reference,
+            'result_desc' => $transaction->result_desc,
+            'amount' => $transaction->amount,
+            'phone' => $transaction->phone_number,
+        ]);
+
+        // Handle failed payment
+        // Example: Update order status, send notification, etc.
+        /*
+        $order = Order::where('order_number', $transaction->account_reference)->first();
+        if ($order) {
+            $order->update(['status' => 'payment_failed']);
+        }
+        */
+    }
+}
+```
+
+## Usage
+
+### Initiate STK Push Payment
+
+```php
+use Tish\LaravelMpesa\Facades\Mpesa;
+
+$response = Mpesa::stkPush(
+    '254712345678',           // Phone number
+    100,                      // Amount
+    'ORDER-12345',           // Account reference (your order ID)
+    'Payment for Order 12345' // Transaction description
+);
+
+if (isset($response['CheckoutRequestID'])) {
+    // Payment initiated successfully
+    // Store the CheckoutRequestID for tracking
+    $checkoutRequestId = $response['CheckoutRequestID'];
+} else {
+    // Handle error
+}
+```
+
+### Check Payment Status
+
+```php
+// Get transaction status
+$status = file_get_contents("http://yourapp.com/mpesa/status/{$checkoutRequestId}");
+$statusData = json_decode($status, true);
+
+if ($statusData['status'] === 'completed') {
+    echo "Payment successful! Receipt: " . $statusData['mpesa_receipt_number'];
+} elseif ($statusData['status'] === 'failed') {
+    echo "Payment failed: " . $statusData['result_desc'];
+} else {
+    echo "Payment pending...";
+}
+```
+
+### Available Transaction Data in Events
+
+When handling the `PaymentCompleted` or `PaymentFailed` events, you have access to:
+
+```php
+$transaction = $event->transaction;
+
+// Available properties:
+$transaction->checkout_request_id      // M-Pesa checkout request ID
+$transaction->merchant_request_id      // M-Pesa merchant request ID  
+$transaction->phone_number            // Customer phone number
+$transaction->amount                  // Transaction amount
+$transaction->account_reference       // Your reference (order ID, etc.)
+$transaction->transaction_desc        // Transaction description
+$transaction->status                  // 'pending', 'completed', 'failed'
+$transaction->mpesa_receipt_number    // M-Pesa receipt (if successful)
+$transaction->transaction_date        // When payment was made
+$transaction->result_code             // M-Pesa result code
+$transaction->result_desc             // M-Pesa result description
+```
+
+## Important Notes
+
+1. **Callback URL**: Make sure your `MPESA_CALLBACK_URL` is publicly accessible and points to `https://yourdomain.com/mpesa/callback`
+
+2. **Queue Workers**: Since the listeners implement `ShouldQueue`, make sure you have queue workers running:
+   ```bash
+   php artisan queue:work
+   ```
+
+3. **Logging**: All M-Pesa transactions are logged for debugging. Check your Laravel logs.
+
+4. **Testing**: Use the sandbox environment for testing by setting `MPESA_SANDBOX=true`
+
+## Security
+
+The package handles M-Pesa callback validation and ensures only valid callbacks are processed. Always use HTTPS in production.
+
+## Support
+
+For support, please open an issue on [GitHub](https://github.com/yourusername/laravel-mpesa).
